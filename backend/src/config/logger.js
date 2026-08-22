@@ -22,11 +22,10 @@ const logger = createLogger({
       maxFiles: "30d",
       maxSize: "20m",
     }),
+    // Render captures stdout/stderr. Keep console logging enabled in production
+    // so startup and runtime failures are visible in the Render log stream.
+    new transports.Console({ format: format.simple() }),
   ],
 });
-
-if ((process.env.NODE_ENV || "development") !== "production") {
-  logger.add(new transports.Console({ format: format.combine(format.colorize(), format.simple()) }));
-}
 
 module.exports = logger;
