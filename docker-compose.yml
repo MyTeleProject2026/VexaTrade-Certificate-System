@@ -1,0 +1,36 @@
+version: '3.8'
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: vexatrade-mongodb
+    restart: unless-stopped
+    ports: ["27017:27017"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: vexatrade_certificate
+    volumes: [mongodb_data:/data/db]
+  backend:
+    build: ./backend
+    container_name: vexatrade-backend
+    restart: unless-stopped
+    ports: ["5000:5000"]
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://admin:password123@mongodb:27017/vexatrade_certificate?authSource=admin
+    depends_on: [mongodb]
+    volumes: ["./backend/uploads:/app/uploads"]
+  frontend-user:
+    build: ./frontend-user
+    container_name: vexatrade-user-frontend
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    environment: { VITE_API_URL: http://localhost:5000/api }
+  frontend-admin:
+    build: ./frontend-admin
+    container_name: vexatrade-admin-frontend
+    restart: unless-stopped
+    ports: ["3001:3001"]
+    environment: { VITE_API_URL: http://localhost:5000/api }
+volumes:
+  mongodb_data:
