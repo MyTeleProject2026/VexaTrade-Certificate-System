@@ -33,15 +33,19 @@ async function ensureAdmin() {
   if (!email && !password) return;
   if (!email || !password) throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must both be set");
   if (password.length < 12) throw new Error("ADMIN_PASSWORD must be at least 12 characters");
+
   const bcrypt = require("bcryptjs");
   const User = require("../models/User.model");
-  const existing = await User.findOne({ email });
   const passwordHash = await bcrypt.hash(password, 12);
   const name = String(process.env.ADMIN_NAME || "VexaTrade Administrator").trim();
+
+  // Select the password hash so an existing admin is never saved without it.
+  const existing = await User.findOne({ email }).select("+passwordHash");
   if (existing) {
     existing.passwordHash = passwordHash;
     existing.role = "super_admin";
     existing.isVerified = true;
+    existing.isActive = true;
     existing.status = "active";
     existing.name = name;
     existing.loginAttempts = 0;
@@ -49,7 +53,17 @@ async function ensureAdmin() {
     await existing.save();
     logger.info(`Admin account updated: ${email}`);
   } else {
-    await User.create({ name, email, passwordHash, role: "super_admin", isVerified: true, status: "active", loginAttempts: 0, lockUntil: null });
+    await User.create({
+      name,
+      email,
+      passwordHash,
+      role: "super_admin",
+      isVerified: true,
+      isActive: true,
+      status: "active",
+      loginAttempts: 0,
+      lockUntil: null,
+    });
     logger.info(`Admin account created: ${email}`);
   }
 }
