@@ -1,29 +1,57 @@
-const mongoose = require("mongoose");
+const mysql = require("mysql2/promise");
 const logger = require("./logger");
 
-async function connectDB() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error("MONGODB_URI is required. Add a reachable MongoDB/Atlas connection string to Render environment variables.");
+let pool;
 
-  if (/mongodb(\+srv)?:\/\/127\.0\.0\.1|mongodb(\+srv)?:\/\/localhost/i.test(uri)) {
-    throw new Error("MONGODB_URI points to localhost/127.0.0.1. Render cannot reach MongoDB running on your local machine. Use MongoDB Atlas or another publicly reachable MongoDB service.");
-  }
-
-  mongoose.set("strictQuery", true);
-  mongoose.connection.on("connected", () => logger.info("MongoDB connected"));
-  mongoose.connection.on("error", (err) => logger.error(`MongoDB error: ${err.message}`));
-  mongoose.connection.on("disconnected", () => logger.warn("MongoDB disconnected"));
-
-  try {
-    await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 10000),
-      connectTimeoutMS: Number(process.env.MONGODB_CONNECT_TIMEOUT_MS || 10000),
-      socketTimeoutMS: Number(process.env.MONGODB_SOCKET_TIMEOUT_MS || 45000),
-      maxPoolSize: 20,
+function getPool() {
+  if (!pool) {
+    const url = process.env.TIDB_URL || process.env.DATABASE_URL;
+    const common = {
+      waitForConnections: true,
+      connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
+      timezone: "Z",
+      ssl: process.env.TIDB_SSL === "false" ? undefined : { rejectUnauthorized: false },
+    };
+    pool = url ? mysql.createPool(url) : mysql.createPool({
+      host: process.env.TIDB_HOST || "127.0.0.1",
+      port: Number(process.env.TIDB_PORT || 4000),
+      user: process.env.TIDB_USER,
+      password: process.env.TIDB_PASSWORD,
+      database: process.env.TIDB_DATABASE || "vexatrade",
+      ...common,
     });
-  } catch (err) {
-    throw new Error(`MongoDB connection failed: ${err.message}`);
+  }
+  return pool;
+}
+
+async function connectDB() {
+  const p = getPool();
+  const conn = await p.getConnection();
+  try {
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS app_documents (
+        id CHAR(36) NOT NULL,
+        collection VARCHAR(64) NOT NULL,
+        data JSON NOT NULL,
+        created_at DATETIME(3) NOT NULL,
+        updated_at DATETIME(3) NOT NULL,
+        PRIMARY KEY (id),
+        INDEX idx_collection_created (collection, created_at),
+        INDEX idx_collection_updated (collection, updated_at)
+      ) ENGINE=InnoDB
+    `);
+    logger.info("TiDB MySQL connected and schema ready");
+  } finally {
+    conn.release();
   }
 }
 
-module.exports = { connectDB };
+async function closeDB() {
+  if (pool) await pool.end();
+  pool = null;
+}
+
+module.exports = { connectDB, closeDB, getPool };
