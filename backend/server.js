@@ -17,8 +17,9 @@ const { v4: uuidv4 } = require("uuid");
 const { connectDB } = require("./src/config/database");
 const redis = require("./src/config/redis");
 const logger = require("./src/config/logger");
-const errorHandler = require("./src/middleware/error.middleware");
-const { notFound } = require("./src/middleware/error.middleware");
+const errorMiddleware = require("./src/middleware/error.middleware");
+const notFound = errorMiddleware.notFound;
+const errorHandler = errorMiddleware.errorHandler;
 
 const authRoutes = require("./src/routes/auth.routes");
 const applicationRoutes = require("./src/routes/application.routes");
@@ -34,13 +35,7 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000")
   .map((v) => v.trim())
   .filter(Boolean);
 
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    credentials: true,
-  },
-});
-
+const io = new Server(server, { cors: { origin: allowedOrigins, credentials: true } });
 app.set("io", io);
 app.set("trust proxy", Number(process.env.TRUST_PROXY || 1));
 
@@ -48,39 +43,31 @@ const uploadDir = path.resolve(process.env.UPLOAD_DIR || "./uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 
 app.disable("x-powered-by");
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  })
-);
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("CORS origin denied"));
-    },
-    credentials: true,
-  })
-);
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("CORS origin denied"));
+  },
+  credentials: true,
+}));
 app.use(compression());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
 if (process.env.MONGODB_URI) {
-  app.use(
-    session({
-      secret: process.env.SESSION_SECRET || uuidv4(),
-      resave: false,
-      saveUninitialized: false,
-      store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
-      cookie: {
-        httpOnly: true,
-        secure: String(process.env.COOKIE_SECURE) === "true",
-        sameSite: process.env.COOKIE_SAME_SITE || "lax",
-        maxAge: 24 * 60 * 60 * 1000,
-      },
-    })
-  );
+  app.use(session({
+    secret: process.env.SESSION_SECRET || uuidv4(),
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
+    cookie: {
+      httpOnly: true,
+      secure: String(process.env.COOKIE_SECURE) === "true",
+      sameSite: process.env.COOKIE_SAME_SITE || "lax",
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  }));
 }
 
 const limiter = rateLimit({
@@ -92,44 +79,30 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 
-
 app.use((req, res, next) => {
   const requestId = req.headers["x-request-id"] || uuidv4();
   req.requestId = requestId;
   res.setHeader("x-request-id", requestId);
   const started = Date.now();
-
-  res.on("finish", () => {
-    logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - started}ms`, {
-      requestId,
-      ip: req.ip,
-    });
-  });
+  res.on("finish", () => logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - started}ms`, { requestId, ip: req.ip }));
   next();
 });
 
-app.get("/health", async (req, res) => {
-  res.json({
-    success: true,
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    services: {
-      mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-      redis: redis.isReady ? "connected" : "disabled",
-    },
-    environment: process.env.NODE_ENV || "development",
-    version: require("./package.json").version,
-  });
-});
+app.get("/health", (req, res) => res.json({
+  success: true,
+  status: "ok",
+  timestamp: new Date().toISOString(),
+  uptime: process.uptime(),
+  services: {
+    mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    redis: redis.isReady ? "connected" : "disabled",
+  },
+  environment: process.env.NODE_ENV || "development",
+  version: require("./package.json").version,
+}));
 
 if (String(process.env.MAINTENANCE_MODE) === "true") {
-  app.use("/api", (req, res) =>
-    res.status(503).json({
-      success: false,
-      message: process.env.MAINTENANCE_MESSAGE || "System under maintenance.",
-    })
-  );
+  app.use("/api", (req, res) => res.status(503).json({ success: false, message: process.env.MAINTENANCE_MESSAGE || "System under maintenance." }));
 }
 
 app.use("/api/auth", authRoutes);
@@ -141,7 +114,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-io.use(async (socket, next) => {
+io.use((socket, next) => {
   try {
     const token = socket.handshake.auth?.token;
     if (!token) return next();
@@ -150,9 +123,7 @@ io.use(async (socket, next) => {
     socket.userId = String(decoded.userId);
     socket.role = decoded.role;
     next();
-  } catch {
-    next();
-  }
+  } catch { next(); }
 });
 
 io.on("connection", (socket) => {
@@ -166,29 +137,21 @@ io.on("connection", (socket) => {
 });
 
 let listener;
-
 async function start() {
   await connectDB();
   await redis.connect();
-
   const port = Number(process.env.PORT || 5000);
   const host = process.env.HOST || "0.0.0.0";
-
-  listener = server.listen(port, host, () => {
-    logger.info(`VexaTrade backend listening on http://${host}:${port}`);
-  });
+  listener = server.listen(port, host, () => logger.info(`VexaTrade backend listening on http://${host}:${port}`));
 }
 
 async function shutdown(signal) {
   logger.info(`${signal} received; shutting down`);
-  if (listener) {
-    await new Promise((resolve) => listener.close(resolve));
-  }
+  if (listener) await new Promise((resolve) => listener.close(resolve));
   await redis.quit();
   await mongoose.connection.close();
   process.exit(0);
 }
-
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
@@ -198,5 +161,4 @@ if (require.main === module) {
     process.exit(1);
   });
 }
-
 module.exports = { app, server, io };
