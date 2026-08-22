@@ -1,8 +1,8 @@
 {
   "name": "vexatrade-certificate-backend",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
-  "description": "VexaTrade certificate application and verification backend",
+  "description": "VexaTrade certificate application and verification backend using TiDB MySQL",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -12,13 +12,10 @@
     "seed:admin": "node scripts/seed-admin.js",
     "format": "prettier --write \"src/**/*.js\" \"server.js\" \"scripts/*.js\""
   },
-  "engines": {
-    "node": ">=18.18.0"
-  },
+  "engines": { "node": ">=18.18.0" },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",
-    "connect-mongo": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
@@ -26,8 +23,8 @@
     "express-session": "^1.18.2",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.9.3",
     "multer": "^2.0.2",
+    "mysql2": "^3.14.4",
     "nodemailer": "^7.0.10",
     "pdfkit": "^0.17.2",
     "qrcode": "^1.5.4",
