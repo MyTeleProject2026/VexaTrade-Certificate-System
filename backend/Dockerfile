@@ -1,7 +1,15 @@
-FROM node:20-alpine
+FROM node:20-bookworm-slim
+
 WORKDIR /app
+
 COPY package*.json ./
-RUN npm install
+RUN npm ci --omit=dev
+
 COPY . .
+
+RUN mkdir -p uploads logs
+
+ENV NODE_ENV=production
 EXPOSE 5000
-CMD ["npm","start"]
+
+CMD ["node", "server.js"]
