@@ -1,64 +1,44 @@
-# VexaTrade Certificate Backend — Final
+# VexaTrade Certificate Backend 4.0
 
-This project implements the backend architecture from the supplied VexaTrade certificate specification.
+Backend API for the VexaTrade certificate and KYC system.
 
-## Features
+## Database
 
-- Express API
-- MongoDB/Mongoose data layer
-- JWT access and refresh tokens
-- Optional VexaAccount SSO verification
-- User, application, KYC, certificate, notification and audit models
-- Admin review workflow
-- KYC multipart uploads
-- SVG/PNG/PDF certificate generation
-- QR verification codes
-- Optional blockchain anchoring adapter
-- Redis-backed refresh-token storage when enabled
-- Email notification adapter
-- Socket.IO notifications
-- Rate limiting, Helmet, CORS and request IDs
-- Docker and PM2 configuration
+This version uses **TiDB MySQL** through `mysql2`. MongoDB/Mongoose are no longer required.
 
-## Setup
+### TiDB Cloud setup
 
-1. Copy `.env.example` to `.env`.
-2. Set a strong `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `SESSION_SECRET`.
-3. Configure `MONGODB_URI`.
-4. Start Redis if `REDIS_ENABLED=true`.
-5. Install dependencies: `npm install`
-6. Check structure: `npm run check`
-7. Start development: `npm run dev`
+Create a database in TiDB, for example:
 
-Docker: `docker compose up --build` starts API + MongoDB + Redis.
+```sql
+CREATE DATABASE vexatrade;
+```
 
-If Redis is disabled, the backend uses an in-process refresh-token fallback so local development still works; use Redis in production.
+Then configure the backend with either a `TIDB_URL` or the individual variables:
 
-## API
+```env
+TIDB_HOST=gateway01.<your-region>.prod.aws.tidbcloud.com
+TIDB_PORT=4000
+TIDB_USER=<your-tiDB-user>
+TIDB_PASSWORD=<your-password>
+TIDB_DATABASE=vexatrade
+TIDB_SSL=true
+```
 
-- `GET /health`
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/sso`
-- `POST /api/auth/refresh`
-- `GET /api/auth/me`
-- `POST /api/auth/logout`
-- `POST /api/applications`
-- `GET /api/applications`
-- `GET /api/admin/dashboard`
-- `GET /api/admin/applications`
-- `POST /api/admin/applications/:id/approve`
-- `POST /api/admin/applications/:id/reject`
-- `GET /api/certificates`
-- `GET /api/certificates/verify/:code`
-- `GET /api/notifications`
+The backend automatically creates its application document table on startup. It stores the existing application models (users, applications, certificates, notifications and audit logs) in TiDB JSON documents while preserving the existing controller/API contract.
 
-## Important
+## Render
 
-The external VexaAccount SSO endpoint and blockchain API are configurable adapters. They are intentionally disabled by default. Real credentials, endpoint contracts, blockchain transaction semantics, SMTP settings and deployment secrets must be supplied before production use.
+Set the backend Root Directory to `backend`, Build Command to `npm install`, and Start Command to `npm start`.
 
-KYC and identity files are sensitive. This package does not expose the uploads directory as a public Express static directory; certificate downloads are handled through authenticated routes. For production, use private encrypted object storage and authenticated access.
+Required production variables include `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, `TIDB_DATABASE`, `TIDB_SSL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `SESSION_SECRET`, and `CORS_ORIGIN`.
 
-## Security
+Keep credentials in Render Environment Variables; do not commit them to GitHub.
 
-Do not commit `.env`, passwords, API keys, signing secrets, KYC files, or production certificates to Git.
+## Redis
+
+Set `REDIS_ENABLED=false` unless a Redis service is configured. JWT refresh-token storage has an in-memory fallback when Redis is disabled.
+
+## Health
+
+After deployment, open `/health`. A successful response reports the TiDB-backed service as healthy.
