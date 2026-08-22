@@ -15,37 +15,60 @@ function getPool() {
       timezone: "Z",
       ssl: process.env.TIDB_SSL === "false" ? undefined : { rejectUnauthorized: false },
     };
-
-    pool = url
-      ? mysql.createPool(url)
-      : mysql.createPool({
-          host: process.env.TIDB_HOST || process.env.DB_HOST || "127.0.0.1",
-          port: Number(process.env.TIDB_PORT || process.env.DB_PORT || 4000),
-          user: process.env.TIDB_USER || process.env.DB_USERNAME || process.env.DB_USER,
-          password: process.env.TIDB_PASSWORD || process.env.DB_PASSWORD,
-          database: process.env.TIDB_DATABASE || process.env.DB_DATABASE || "vexatrade",
-          ...common,
-        });
+    pool = url ? mysql.createPool(url) : mysql.createPool({
+      host: process.env.TIDB_HOST || process.env.DB_HOST || "127.0.0.1",
+      port: Number(process.env.TIDB_PORT || process.env.DB_PORT || 4000),
+      user: process.env.TIDB_USER || process.env.DB_USERNAME || process.env.DB_USER,
+      password: process.env.TIDB_PASSWORD || process.env.DB_PASSWORD,
+      database: process.env.TIDB_DATABASE || process.env.DB_DATABASE || "vexatrade",
+      ...common,
+    });
   }
   return pool;
+}
+
+async function ensureAdmin() {
+  const email = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  const password = String(process.env.ADMIN_PASSWORD || "");
+  if (!email && !password) return;
+  if (!email || !password) throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must both be set");
+  if (password.length < 12) throw new Error("ADMIN_PASSWORD must be at least 12 characters");
+  const bcrypt = require("bcryptjs");
+  const User = require("../models/User.model");
+  const existing = await User.findOne({ email });
+  const passwordHash = await bcrypt.hash(password, 12);
+  const name = String(process.env.ADMIN_NAME || "VexaTrade Administrator").trim();
+  if (existing) {
+    existing.passwordHash = passwordHash;
+    existing.role = "super_admin";
+    existing.isVerified = true;
+    existing.status = "active";
+    existing.name = name;
+    existing.loginAttempts = 0;
+    existing.lockUntil = null;
+    await existing.save();
+    logger.info(`Admin account updated: ${email}`);
+  } else {
+    await User.create({ name, email, passwordHash, role: "super_admin", isVerified: true, status: "active", loginAttempts: 0, lockUntil: null });
+    logger.info(`Admin account created: ${email}`);
+  }
 }
 
 async function connectDB() {
   const p = getPool();
   const conn = await p.getConnection();
   try {
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS app_documents (
-        id CHAR(36) NOT NULL,
-        collection VARCHAR(64) NOT NULL,
-        data JSON NOT NULL,
-        created_at DATETIME(3) NOT NULL,
-        updated_at DATETIME(3) NOT NULL,
-        PRIMARY KEY (id),
-        INDEX idx_collection_created (collection, created_at),
-        INDEX idx_collection_updated (collection, updated_at)
-      ) ENGINE=InnoDB
-    `);
+    await conn.query(`CREATE TABLE IF NOT EXISTS app_documents (
+      id CHAR(36) NOT NULL,
+      collection VARCHAR(64) NOT NULL,
+      data JSON NOT NULL,
+      created_at DATETIME(3) NOT NULL,
+      updated_at DATETIME(3) NOT NULL,
+      PRIMARY KEY (id),
+      INDEX idx_collection_created (collection, created_at),
+      INDEX idx_collection_updated (collection, updated_at)
+    ) ENGINE=InnoDB`);
+    await ensureAdmin();
     logger.info("TiDB MySQL connected and schema ready");
   } finally {
     conn.release();
