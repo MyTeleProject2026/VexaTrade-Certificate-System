@@ -31,9 +31,7 @@ const app = express();
 const server = http.createServer(app);
 
 const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000")
-  .split(",")
-  .map((v) => v.trim())
-  .filter(Boolean);
+  .split(",").map((v) => v.trim()).filter(Boolean);
 
 const io = new Server(server, { cors: { origin: allowedOrigins, credentials: true } });
 app.set("io", io);
@@ -48,8 +46,7 @@ app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error("CORS origin denied"));
-  },
-  credentials: true,
+  }, credentials: true,
 }));
 app.use(compression());
 app.use(express.json({ limit: "2mb" }));
@@ -58,8 +55,7 @@ app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 if (process.env.MONGODB_URI) {
   app.use(session({
     secret: process.env.SESSION_SECRET || uuidv4(),
-    resave: false,
-    saveUninitialized: false,
+    resave: false, saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
     cookie: {
       httpOnly: true,
@@ -73,36 +69,27 @@ if (process.env.MONGODB_URI) {
 const limiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MINUTES || 15) * 60 * 1000,
   limit: Number(process.env.RATE_LIMIT_MAX || 100),
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
+  standardHeaders: "draft-8", legacyHeaders: false,
   message: { success: false, message: "Too many requests. Please try again later." },
 });
 app.use("/api", limiter);
 
 app.use((req, res, next) => {
   const requestId = req.headers["x-request-id"] || uuidv4();
-  req.requestId = requestId;
-  res.setHeader("x-request-id", requestId);
+  req.requestId = requestId; res.setHeader("x-request-id", requestId);
   const started = Date.now();
-  res.on("finish", () => logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - started}ms`, { requestId, ip: req.ip }));
+  res.on("finish", () => logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - started}ms requestId=${requestId}`));
   next();
 });
 
 app.get("/health", (req, res) => res.json({
-  success: true,
-  status: "ok",
-  timestamp: new Date().toISOString(),
-  uptime: process.uptime(),
-  services: {
-    mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-    redis: redis.isReady ? "connected" : "disabled",
-  },
-  environment: process.env.NODE_ENV || "development",
-  version: require("./package.json").version,
+  success: true, status: "ok", timestamp: new Date().toISOString(), uptime: process.uptime(),
+  services: { mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected", redis: redis.isReady ? "connected" : "disabled" },
+  environment: process.env.NODE_ENV || "development", version: require("./package.json").version,
 }));
 
 if (String(process.env.MAINTENANCE_MODE) === "true") {
-  app.use("/api", (req, res) => res.status(503).json({ success: false, message: process.env.MAINTENANCE_MESSAGE || "System under maintenance." }));
+  app.use("/api", (req, res) => res.status(503).json({ success: false, message: process.env.MAINTENANCE_MESSAGE || "System is temporarily under maintenance." }));
 }
 
 app.use("/api/auth", authRoutes);
@@ -120,10 +107,9 @@ io.use((socket, next) => {
     if (!token) return next();
     const jwt = require("jsonwebtoken");
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    socket.userId = String(decoded.userId);
-    socket.role = decoded.role;
-    next();
-  } catch { next(); }
+    socket.userId = String(decoded.userId); socket.role = decoded.role;
+  } catch (_) {}
+  next();
 });
 
 io.on("connection", (socket) => {
@@ -138,11 +124,21 @@ io.on("connection", (socket) => {
 
 let listener;
 async function start() {
-  await connectDB();
-  await redis.connect();
-  const port = Number(process.env.PORT || 5000);
-  const host = process.env.HOST || "0.0.0.0";
-  listener = server.listen(port, host, () => logger.info(`VexaTrade backend listening on http://${host}:${port}`));
+  try {
+    logger.info(`Starting VexaTrade backend; NODE_ENV=${process.env.NODE_ENV || "development"}`);
+    await connectDB();
+    logger.info("MongoDB startup check passed");
+    await redis.connect();
+    logger.info(`Redis startup check: ${redis.enabled ? (redis.isReady ? "connected" : "not ready") : "disabled"}`);
+    const port = Number(process.env.PORT || 5000);
+    const host = process.env.HOST || "0.0.0.0";
+    listener = server.listen(port, host, () => logger.info(`VexaTrade backend listening on ${host}:${port}`));
+  } catch (err) {
+    console.error("FATAL STARTUP ERROR:", err.stack || err.message || err);
+    logger.error(`FATAL STARTUP ERROR: ${err.stack || err.message || err}`);
+    process.exitCode = 1;
+    throw err;
+  }
 }
 
 async function shutdown(signal) {
@@ -156,9 +152,6 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 if (require.main === module) {
-  start().catch((err) => {
-    logger.error("Startup failed", { error: err.stack || err.message });
-    process.exit(1);
-  });
+  start().catch(() => process.exit(1));
 }
 module.exports = { app, server, io };
