@@ -15,14 +15,17 @@ function getPool() {
       timezone: "Z",
       ssl: process.env.TIDB_SSL === "false" ? undefined : { rejectUnauthorized: false },
     };
-    pool = url ? mysql.createPool(url) : mysql.createPool({
-      host: process.env.TIDB_HOST || "127.0.0.1",
-      port: Number(process.env.TIDB_PORT || 4000),
-      user: process.env.TIDB_USER,
-      password: process.env.TIDB_PASSWORD,
-      database: process.env.TIDB_DATABASE || "vexatrade",
-      ...common,
-    });
+
+    pool = url
+      ? mysql.createPool(url)
+      : mysql.createPool({
+          host: process.env.TIDB_HOST || process.env.DB_HOST || "127.0.0.1",
+          port: Number(process.env.TIDB_PORT || process.env.DB_PORT || 4000),
+          user: process.env.TIDB_USER || process.env.DB_USERNAME || process.env.DB_USER,
+          password: process.env.TIDB_PASSWORD || process.env.DB_PASSWORD,
+          database: process.env.TIDB_DATABASE || process.env.DB_DATABASE || "vexatrade",
+          ...common,
+        });
   }
   return pool;
 }
