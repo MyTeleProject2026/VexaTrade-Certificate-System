@@ -1,33 +1,11 @@
-const fs = require("fs");
-const path = require("path");
 const multer = require("multer");
-const { v4: uuidv4 } = require("uuid");
-
-const base = path.resolve(process.env.UPLOAD_DIR || "./uploads");
-const dirs = {
-  idFrontImage: "kyc/id-front",
-  idBackImage: "kyc/id-back",
-  selfieImage: "kyc/selfies",
-  proofOfAddress: "kyc/proof-address",
-};
-
-for (const relative of Object.values(dirs)) fs.mkdirSync(path.join(base, relative), { recursive: true });
 
 const allowed = new Set((process.env.ALLOWED_FILE_TYPES || "image/jpeg,image/png,image/webp,application/pdf")
   .split(",").map((x) => x.trim()).filter(Boolean));
 
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    const relative = dirs[file.fieldname] || "temp";
-    const destination = path.join(base, relative);
-    fs.mkdirSync(destination, { recursive: true });
-    cb(null, destination);
-  },
-  filename(req, file, cb) {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${Date.now()}-${uuidv4()}${ext}`);
-  },
-});
+// Memory storage is intentional: KYC files are streamed directly to Cloudinary.
+// This avoids relying on Render's ephemeral filesystem for identity documents.
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
