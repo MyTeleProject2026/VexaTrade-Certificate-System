@@ -1,9 +1,7 @@
 // Compatibility layer for the lucide-react version used by the user portal.
-// Use a relative node_modules path so Vite's lucide-react alias does not recurse
-// back into this shim.
+// Keep this list explicit so Vite can resolve every icon used by App.jsx.
 export {
   LayoutDashboard,
-  FileCheck2,
   ShieldCheck,
   LogOut,
   Menu,
@@ -15,9 +13,13 @@ export {
   Clock3,
   AlertTriangle,
   WalletCards,
-  Copy,
   ExternalLink,
+  ArrowLeft,
+  ArrowRight,
+  Save,
+  Copy,
   BadgeCheck
 } from "../node_modules/lucide-react/dist/esm/lucide-react.js";
 
+// The installed Lucide version does not expose a Certificate icon.
 export { BadgeCheck as Certificate } from "../node_modules/lucide-react/dist/esm/lucide-react.js";
